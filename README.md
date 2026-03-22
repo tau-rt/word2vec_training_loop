@@ -63,6 +63,5 @@ raskolnikov → razumikhin, sonia, …
 crime → murder, conscience, …
 
 Pair similarities:
-similarity(crime, murder) = 0.93
-similarity(prison, punishment) = 0.98
-similarity(crime, table) = 0.74
+similarity(prison, punishment) = 0.77
+similarity(crime, table) = 0.2
