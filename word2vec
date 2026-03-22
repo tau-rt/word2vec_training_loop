@@ -1,0 +1,177 @@
+import numpy as np
+import re
+import random
+
+def load_text(path):
+  with open(path, "r", encoding="utf-8") as f:
+    return f.read()
+
+def initial_embedings(vocab_size, embeding_dimensions):
+  limit = 0.5/vocab_size
+  w_in = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
+  w_out = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
+  return w_in, w_out
+
+def split_sentences(text):
+  raw_sentences = re.split(r"[.!?]+", text.lower())
+  tokenized_sentences = []
+  for sentence in raw_sentences:
+    sentence = re.sub(r"[^a-z]+", " ", sentence)
+    sentence = sentence.strip()
+    if not sentence:
+      continue
+    tokens = sentence.split()
+    tokenized_sentences.append(tokens)
+  return tokenized_sentences
+
+def build_vocab(tokenized_sentences):
+  tokens = []
+  for sentence in tokenized_sentences:
+    tokens.extend(sentence)
+  vocab = sorted(set(tokens))
+  vocab_size = len(vocab)
+  vocab_ids = {word: i for i, word in enumerate(vocab)}
+  idx_to_word = {i: word for word, i in vocab_ids.items()}
+  return vocab, vocab_size, vocab_ids, idx_to_word
+
+def generate_pairs(tokenized_sentences, vocab_ids, window_size):
+  pairs = []
+  for sentence in tokenized_sentences:
+    word_ids = [vocab_ids[word] for word in sentence]
+    for i in range(len(word_ids)):
+      center = word_ids[i]
+      left = max(0, i-window_size)
+      right = min(len(word_ids), i+window_size+1)
+      for j in range(left, right):
+        if i == j:
+          continue
+        context = word_ids[j]
+        pairs.append((center, context))
+  return pairs
+
+def sigmoid(x):
+  return 1.0/(1.0+np.exp(-x))
+
+def sample_negatives(vocab_size, forbidden, num_negatives):
+  neg_samples = []
+  while len(neg_samples) < num_negatives:
+    neg = np.random.randint(0, vocab_size)
+    if neg not in forbidden:
+      neg_samples.append(neg)
+  return neg_samples
+
+def training_step(index, pos_index, vocab_size, w_in, w_out, lr, num_negatives):
+  #1. Vectors
+  u = w_in[index]
+  v_pos = w_out[pos_index]
+  neg_samples = sample_negatives(vocab_size, {index, pos_index}, num_negatives)
+  v_neg = w_out[neg_samples]
+  #2. Forward Pass
+  pos_sig = sigmoid(np.dot(u, v_pos))
+  neg_sig = sigmoid(np.dot(v_neg, u))
+  #3. Loss
+  loss = -np.log(pos_sig+(1e-10)) - np.sum(np.log(1-neg_sig+(1e-10)))
+  #4. Gradients
+  g_pos = pos_sig - 1.0
+  g_negs = neg_sig
+  grad_u = g_pos * v_pos + np.sum(g_negs[:, None] * v_neg, axis=0)
+  grad_v_pos = g_pos * u
+  grad_v_negs = g_negs[:, None] * u
+  #5. Parameter Updates
+  w_in[index] -= lr * grad_u
+  w_out[pos_index] -= lr * grad_v_pos
+  for i, neg_idx in enumerate(neg_samples):
+    w_out[neg_idx] -= lr * grad_v_negs[i]
+  return loss
+
+def train(pairs, vocab_size, w_in, w_out, epochs, lr, num_negatives):
+  for epoch in range(epochs):
+    random.shuffle(pairs)
+    total_loss = 0.0
+    for index, pos_index in pairs:
+      loss = training_step(index, pos_index, vocab_size, w_in, w_out, lr, num_negatives)
+      total_loss += loss
+    avg_loss = total_loss / len(pairs)
+    print(f"epoch {epoch+1}: loss = {avg_loss:.4f}")
+
+def show_most_similar(word, vocab_ids, idx_to_word, W_in, top_k=5):
+  if word not in vocab_ids:
+    print(f"{word} not in vocabulary")
+    return
+  idx = vocab_ids[word]
+  v = W_in[idx]
+  sims = W_in @ v
+  norms = np.linalg.norm(W_in, axis=1) * np.linalg.norm(v)
+  sims = sims / (norms + 1e-10)
+  top = np.argsort(-sims)[1:top_k+1]
+  return [(idx_to_word[i], round(float(sims[i]), 2)) for i in top]
+
+def show_pair_similarity(word1, word2, vocab_ids, W_in):
+  if word1 not in vocab_ids or word2 not in vocab_ids:
+    print(f"{word1} or {word2} not in vocabulary")
+    return
+  v1 = W_in[vocab_ids[word1]]
+  v2 = W_in[vocab_ids[word2]]
+  cos_similarity = np.dot(v1,v2)/(np.linalg.norm(v1) * np.linalg.norm(v2)+1e-10)
+  print(f"similarity({word1}, {word2}) = {round(float(cos_similarity),2)}")
+
+def evaluate_model(vocab_ids, idx_to_word, w_in):
+  print("This is a test of model's capabilities using 'Crime and Punishment' as a text corpus")
+  test_words = ["raskolnikov", "sonia", "marmeladov", "student", "tavern", "crime"]
+  print("\nMost similar words:")
+  for word in test_words:
+    print(f"{word}: {show_most_similar(word, vocab_ids, idx_to_word, w_in)}")
+
+  print("\nPair similarities:")
+  pairs_to_check = [
+    ("crime", "murder"),
+    ("crime", "conscience"),
+    ("prison", "punishment"),
+    ("student", "raskolnikov"),
+    ("marmeladov", "sonia"),
+    ("room", "house"),
+    ("tavern", "street"),
+    ("murder", "cucumber"),
+    ]
+  for w1, w2 in pairs_to_check:
+    show_pair_similarity(w1, w2, vocab_ids, w_in)
+
+  negative_pairs = [
+    ("crime", "table"),
+    ("murder", "window"),
+    ("prison", "bread"),
+    ("conscience", "chair"),
+    ("suffering", "door"),
+    ("raskolnikov", "candle"),
+    ("sonia", "wall"),
+    ("marmeladov", "floor"),
+    ("student", "cup"),
+    ("tavern", "pillow"),
+  ]
+  for w1, w2 in negative_pairs:
+    show_pair_similarity(w1, w2, vocab_ids, w_in)
+
+def print_information(epochs, lr, embeding_dimensions, num_negatives, vocab_size):
+  print("Epochs: ", epochs)
+  print("Learning rate: ", lr)
+  print("Dimension of embedding: ", embeding_dimensions)
+  print("Negative samples per pair: ", num_negatives)
+  print("Total words in vocabulary:", vocab_size)
+
+def main():
+  window_size = 2
+  epochs = 10
+  lr = 0.02
+  embeding_dimensions = 20
+  num_negatives = 5
+  text = load_text("crime_and_punishment_clean.txt")
+
+  tokenized_sentences = split_sentences(text)
+  vocab, vocab_size, vocab_ids, idx_to_word = build_vocab(tokenized_sentences)
+  w_in, w_out = initial_embedings(vocab_size, embeding_dimensions)
+  pairs = generate_pairs(tokenized_sentences, vocab_ids, window_size)
+  train(pairs, vocab_size, w_in, w_out, epochs, lr, num_negatives)
+  evaluate_model(vocab_ids, idx_to_word, w_in)
+  print_information(epochs, lr, embeding_dimensions, num_negatives, vocab_size)
+
+main()
