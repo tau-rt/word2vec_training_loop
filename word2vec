@@ -26,7 +26,7 @@ def split_sentences(text, stopwords):
     if not sentence:
       continue
     tokens = sentence.split()
-    tokens = [w for w in tokens if w not in stopwords]
+    tokens = [w for w in tokens if w not in stopwords and len(w) >= 3]
     if tokens:
       tokenized_sentences.append(tokens)
   return tokenized_sentences
