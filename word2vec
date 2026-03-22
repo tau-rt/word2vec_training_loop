@@ -12,7 +12,7 @@ def initial_embedings(vocab_size, embeding_dimensions):
   w_out = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
   return w_in, w_out
 
-def split_sentences(text):
+def split_sentences(text, stopwords):
   raw_sentences = re.split(r"[.!?]+", text.lower())
   tokenized_sentences = []
   for sentence in raw_sentences:
@@ -21,7 +21,9 @@ def split_sentences(text):
     if not sentence:
       continue
     tokens = sentence.split()
-    tokenized_sentences.append(tokens)
+    tokens = [w for w in tokens if w not in STOPWORDS]
+    if tokens:
+      tokenized_sentences.append(tokens)
   return tokenized_sentences
 
 def build_vocab(tokenized_sentences):
@@ -166,7 +168,12 @@ def main():
   num_negatives = 5
   text = load_text("crime_and_punishment_clean.txt")
 
-  tokenized_sentences = split_sentences(text)
+  stopwords = {
+    "the", "and", "is", "of", "to", "in", "a", "that", "it",
+    "on", "for", "with", "as", "was", "at", "by", "an",
+    "be", "this", "which", "or", "from", "but", "not"}
+
+  tokenized_sentences = split_sentences(text, stopwords)
   vocab, vocab_size, vocab_ids, idx_to_word = build_vocab(tokenized_sentences)
   w_in, w_out = initial_embedings(vocab_size, embeding_dimensions)
   pairs = generate_pairs(tokenized_sentences, vocab_ids, window_size)
