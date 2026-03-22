@@ -1,18 +1,22 @@
+# Word2Vec (skip-gram with negative sampling) implemented using NumPy.
 import numpy as np
 import re
 import random
 from collections import Counter
 
+# Load .txt file with text
 def load_text(path):
   with open(path, "r", encoding="utf-8") as f:
     return f.read()
 
+# Create random initial embedding matricies
 def initial_embedings(vocab_size, embeding_dimensions):
   limit = 0.5/vocab_size
   w_in = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
   w_out = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
   return w_in, w_out
 
+# Preprocess text: lowercase, split into sentences, remove punctuation (keep only a-z), remove stopwords, return list of tokenized sentences
 def split_sentences(text, stopwords):
   raw_sentences = re.split(r"[.!?]+", text.lower())
   tokenized_sentences = []
@@ -27,6 +31,7 @@ def split_sentences(text, stopwords):
       tokenized_sentences.append(tokens)
   return tokenized_sentences
 
+# Create vocabulary from tokenized sentences
 def build_vocab(tokenized_sentences):
   tokens = []
   for sentence in tokenized_sentences:
@@ -37,6 +42,8 @@ def build_vocab(tokenized_sentences):
   idx_to_word = {i: word for word, i in vocab_ids.items()}
   return vocab, vocab_size, vocab_ids, idx_to_word
 
+# Generate (center, context) pairs using a sliding window
+# For each word, take neighbors within window_size as positive examples
 def generate_pairs(tokenized_sentences, vocab_ids, window_size):
   pairs = []
   for sentence in tokenized_sentences:
@@ -55,6 +62,8 @@ def generate_pairs(tokenized_sentences, vocab_ids, window_size):
 def sigmoid(x):
   return 1.0/(1.0+np.exp(-x))
 
+# Build frequency-based distribution for negative sampling:
+# P(w) ∝ count(w)^0.75 (as in original word2vec)
 def build_unigram_distribution(tokenized_sentences, vocab_ids):
   all_tokens = []
   for sentence in tokenized_sentences:
@@ -67,6 +76,8 @@ def build_unigram_distribution(tokenized_sentences, vocab_ids):
   neg_table = np.random.choice(len(probs), size=1000000, p=probs)
   return neg_table
 
+# Sample negative word indices according to the unigram distribution,
+# excluding the center and positive context indices
 def sample_negatives(neg_table, forbidden, num_negatives):
   neg_samples = []
   while len(neg_samples) < num_negatives:
@@ -75,30 +86,44 @@ def sample_negatives(neg_table, forbidden, num_negatives):
       neg_samples.append(neg)
   return neg_samples
 
+
+# One training step for Skip-gram with Negative Sampling (SGNS):
+# - compute positive and negative scores
+# - compute binary cross-entropy loss
+# - compute gradients manually
+# - update embeddings
 def training_step(index, pos_index, vocab_size, w_in, w_out, lr, neg_table, num_negatives):
-  #1. Vectors
+  # 1. Get embeddings for center word and positive context
   u = w_in[index]
   v_pos = w_out[pos_index]
+  # 2. Sample negative examples
   neg_samples = sample_negatives(neg_table, {index, pos_index}, num_negatives)
   v_neg = w_out[neg_samples]
-  #2. Forward Pass
+  # 3. Forward pass: compute σ(u·v) for positive and negative pairs
   pos_sig = sigmoid(np.dot(u, v_pos))
   neg_sig = sigmoid(np.dot(v_neg, u))
-  #3. Loss
+  # 4. Loss: -ln σ(pos) - Σ ln(1 - σ(neg)) including 1e-10 to exclude case of ln(0)
   loss = -np.log(pos_sig+(1e-10)) - np.sum(np.log(1-neg_sig+(1e-10)))
-  #4. Gradients
+  # 5. Gradients:
+  # g_pos = σ(u·v_pos) - 1
+  # g_negs = σ(u·v_neg)
   g_pos = pos_sig - 1.0
   g_negs = neg_sig
+  # Gradient for center embedding (u)
   grad_u = g_pos * v_pos + np.sum(g_negs[:, None] * v_neg, axis=0)
+  # Gradients for context embeddings
   grad_v_pos = g_pos * u
   grad_v_negs = g_negs[:, None] * u
-  #5. Parameter Updates
+  # 6. Parameter Updates
   w_in[index] -= lr * grad_u
   w_out[pos_index] -= lr * grad_v_pos
   for i, neg_idx in enumerate(neg_samples):
     w_out[neg_idx] -= lr * grad_v_negs[i]
   return loss
 
+# Training loop:
+# iterate over all (center, context) pairs for multiple epochs
+# shuffle pairs each epoch for stochasticity
 def train(pairs, vocab_size, w_in, w_out, epochs, lr, neg_table, num_negatives):
   for epoch in range(epochs):
     random.shuffle(pairs)
@@ -109,6 +134,7 @@ def train(pairs, vocab_size, w_in, w_out, epochs, lr, neg_table, num_negatives):
     avg_loss = total_loss / len(pairs)
     print(f"epoch {epoch+1}: loss = {avg_loss:.4f}")
 
+# Find top-k most similar words using cosine similarity
 def show_most_similar(word, vocab_ids, idx_to_word, W_in, top_k=5):
   if word not in vocab_ids:
     print(f"{word} not in vocabulary")
@@ -121,6 +147,7 @@ def show_most_similar(word, vocab_ids, idx_to_word, W_in, top_k=5):
   top = np.argsort(-sims)[1:top_k+1]
   return [(idx_to_word[i], round(float(sims[i]), 2)) for i in top]
 
+# Compute cosine similarity between two word embeddings
 def show_pair_similarity(word1, word2, vocab_ids, W_in):
   if word1 not in vocab_ids or word2 not in vocab_ids:
     print(f"{word1} or {word2} not in vocabulary")
@@ -130,6 +157,8 @@ def show_pair_similarity(word1, word2, vocab_ids, W_in):
   cos_similarity = np.dot(v1,v2)/(np.linalg.norm(v1) * np.linalg.norm(v2)+1e-10)
   print(f"similarity({word1}, {word2}) = {round(float(cos_similarity),2)}")
 
+# Evaluate embeddings on selected words and pairs
+# Includes both related and unrelated examples
 def evaluate_model(vocab_ids, idx_to_word, w_in):
   print("This is a test of model's capabilities using 'Crime and Punishment' as a text corpus")
   test_words = ["raskolnikov", "sonia", "marmeladov", "student", "tavern", "crime"]
@@ -173,6 +202,8 @@ def print_information(epochs, lr, embeding_dimensions, num_negatives, vocab_size
   print("Negative samples per pair: ", num_negatives)
   print("Total words in vocabulary:", vocab_size)
 
+# Main pipeline:
+# load text → preprocess → build vocab → generate pairs → train → evaluate
 def main():
   window_size = 2
   epochs = 10
