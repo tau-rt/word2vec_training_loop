@@ -16,8 +16,8 @@ def initial_embedings(vocab_size, embeding_dimensions):
   w_out = np.random.uniform(-limit, limit, (vocab_size, embeding_dimensions))
   return w_in, w_out
 
-# Preprocess text: lowercase, split into sentences, remove punctuation (keep only a-z), remove stopwords, return list of tokenized sentences
-def split_sentences(text, stopwords):
+# Preprocess text: lowercase, split into sentences, remove punctuation (keep only a-z), remove stopwords, filter the word by frequency and remove, return list of tokenized sentences
+def split_sentences(text, stopwords, min_count):
   raw_sentences = re.split(r"[.!?]+", text.lower())
   tokenized_sentences = []
   for sentence in raw_sentences:
@@ -29,7 +29,14 @@ def split_sentences(text, stopwords):
     tokens = [w for w in tokens if w not in stopwords and len(w) >= 3]
     if tokens:
       tokenized_sentences.append(tokens)
-  return tokenized_sentences
+
+  counts = Counter(w for s in tokenized_sentences for w in s)
+  filtered_sentences = []
+  for sentence in tokenized_sentences:
+    filtered = [w for w in sentence if counts[w] >= min_count]
+    if filtered:
+      filtered_sentences.append(filtered)
+  return filtered_sentences
 
 # Create vocabulary from tokenized sentences
 def build_vocab(tokenized_sentences):
@@ -210,6 +217,7 @@ def main():
   lr = 0.02
   embeding_dimensions = 20
   num_negatives = 5
+  min_count = 5
   text = load_text("crime_and_punishment_clean.txt")
 
   stopwords = {
@@ -220,7 +228,7 @@ def main():
   tokenized_sentences = split_sentences(text, stopwords)
   vocab, vocab_size, vocab_ids, idx_to_word = build_vocab(tokenized_sentences)
   w_in, w_out = initial_embedings(vocab_size, embeding_dimensions)
-  pairs = generate_pairs(tokenized_sentences, vocab_ids, window_size)
+  pairs = generate_pairs(tokenized_sentences, vocab_ids, window_size, min_count)
   probs = build_unigram_distribution(tokenized_sentences, vocab_ids)
   train(pairs, vocab_size, w_in, w_out, epochs, lr, probs, num_negatives)
   evaluate_model(vocab_ids, idx_to_word, w_in)
