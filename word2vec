@@ -1,6 +1,7 @@
 import numpy as np
 import re
 import random
+from collections import Counter
 
 def load_text(path):
   with open(path, "r", encoding="utf-8") as f:
@@ -21,7 +22,7 @@ def split_sentences(text, stopwords):
     if not sentence:
       continue
     tokens = sentence.split()
-    tokens = [w for w in tokens if w not in STOPWORDS]
+    tokens = [w for w in tokens if w not in stopwords]
     if tokens:
       tokenized_sentences.append(tokens)
   return tokenized_sentences
@@ -54,19 +55,31 @@ def generate_pairs(tokenized_sentences, vocab_ids, window_size):
 def sigmoid(x):
   return 1.0/(1.0+np.exp(-x))
 
-def sample_negatives(vocab_size, forbidden, num_negatives):
+def build_unigram_distribution(tokenized_sentences, vocab_ids):
+  all_tokens = []
+  for sentence in tokenized_sentences:
+    all_tokens.extend(sentence)
+  counts = Counter(all_tokens)
+  freqs = np.zeros(len(vocab_ids))
+  for word, idx in vocab_ids.items():
+    freqs[idx] = counts[word]**0.75
+  probs = freqs / np.sum(freqs)
+  neg_table = np.random.choice(len(probs), size=1000000, p=probs)
+  return neg_table
+
+def sample_negatives(neg_table, forbidden, num_negatives):
   neg_samples = []
   while len(neg_samples) < num_negatives:
-    neg = np.random.randint(0, vocab_size)
+    neg = neg_table[np.random.randint(0, len(neg_table))]
     if neg not in forbidden:
       neg_samples.append(neg)
   return neg_samples
 
-def training_step(index, pos_index, vocab_size, w_in, w_out, lr, num_negatives):
+def training_step(index, pos_index, vocab_size, w_in, w_out, lr, neg_table, num_negatives):
   #1. Vectors
   u = w_in[index]
   v_pos = w_out[pos_index]
-  neg_samples = sample_negatives(vocab_size, {index, pos_index}, num_negatives)
+  neg_samples = sample_negatives(neg_table, {index, pos_index}, num_negatives)
   v_neg = w_out[neg_samples]
   #2. Forward Pass
   pos_sig = sigmoid(np.dot(u, v_pos))
@@ -86,12 +99,12 @@ def training_step(index, pos_index, vocab_size, w_in, w_out, lr, num_negatives):
     w_out[neg_idx] -= lr * grad_v_negs[i]
   return loss
 
-def train(pairs, vocab_size, w_in, w_out, epochs, lr, num_negatives):
+def train(pairs, vocab_size, w_in, w_out, epochs, lr, neg_table, num_negatives):
   for epoch in range(epochs):
     random.shuffle(pairs)
     total_loss = 0.0
     for index, pos_index in pairs:
-      loss = training_step(index, pos_index, vocab_size, w_in, w_out, lr, num_negatives)
+      loss = training_step(index, pos_index, vocab_size, w_in, w_out, lr, neg_table, num_negatives)
       total_loss += loss
     avg_loss = total_loss / len(pairs)
     print(f"epoch {epoch+1}: loss = {avg_loss:.4f}")
@@ -177,7 +190,8 @@ def main():
   vocab, vocab_size, vocab_ids, idx_to_word = build_vocab(tokenized_sentences)
   w_in, w_out = initial_embedings(vocab_size, embeding_dimensions)
   pairs = generate_pairs(tokenized_sentences, vocab_ids, window_size)
-  train(pairs, vocab_size, w_in, w_out, epochs, lr, num_negatives)
+  probs = build_unigram_distribution(tokenized_sentences, vocab_ids)
+  train(pairs, vocab_size, w_in, w_out, epochs, lr, probs, num_negatives)
   evaluate_model(vocab_ids, idx_to_word, w_in)
   print_information(epochs, lr, embeding_dimensions, num_negatives, vocab_size)
 
