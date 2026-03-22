@@ -19,3 +19,31 @@ The implementation includes:
 - parameter updates using gradient descent
 
 The model is trained on a cleaned version of *Crime and Punishment* and evaluated using cosine similarity between word embeddings.
+
+## Training Procedure
+
+For each (center, context) pair:
+
+1. Compute dot product between embeddings
+2. Apply sigmoid activation
+3. Compute binary cross-entropy loss:
+   - positive sample
+   - negative samples
+4. Compute gradients manually
+5. Update embeddings using gradient descent
+
+## Hyperparameters (default)
+
+| Parameter            | Value |
+|---------------------|-------|
+| Window size         | 2     |
+| Embedding dimension | 20    |
+| Epochs              | 10    |
+| Learning rate       | 0.02  |
+| Negative samples    | 5     |
+
+## Limitations
+- Small corpus leads to limited semantic separation
+- Uniform negative sampling (not frequency-based)
+- No subsampling of frequent words
+
